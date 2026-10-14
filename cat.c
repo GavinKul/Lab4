@@ -4,99 +4,134 @@
 
 int main(int argc, char *argv[])
 {
-    int showEnds = 0;
-    int numberLines = 0;
-    int squeeze = 0;
+    int e = 0, n = 0, s = 0;
+    int lineNum = 1;
+    int files = 0;
+    int error = 0;
 
-    int lineNumber = 1;
-    int atLineStart = 1;
-    int lineHasContent = 0;
-    int fileCount = 0;
+    char line[4096];
+    int len = 0;
 
-    char ch;
-
+    // Check for arguments
     if (argc < 2) {
         printf("Usage: mycat [-ens] file1 [file2 ...]\n");
         return 1;
     }
 
-    // Process command-line arguments
+    // Check for switches
     for (int i = 1; i < argc; i++) {
-
         if (argv[i][0] == '-') {
-
             for (int j = 1; argv[i][j] != '\0'; j++) {
-
                 if (argv[i][j] == 'e')
-                    showEnds = 1;
-
+                    e = 1;
                 else if (argv[i][j] == 'n')
-                    numberLines = 1;
-
+                    n = 1;
                 else if (argv[i][j] == 's')
-                    squeeze = 1;
-
+                    s = 1;
                 else {
-                    printf("Unknown option: %c\n", argv[i][j]);
+                    printf("Invalid option: %c\n", argv[i][j]);
                     return 1;
                 }
             }
         }
     }
 
-    // Process each file
+    // Read each file
     for (int i = 1; i < argc; i++) {
-
         if (argv[i][0] == '-')
             continue;
 
-        fileCount++;
-
+        files++;
         int fd = open(argv[i], O_RDONLY);
 
         if (fd == -1) {
             perror(argv[i]);
+            error = 1;
             continue;
         }
 
-        while (read(fd, &ch, 1) > 0) {
+        char ch;
+        int count;
 
-            // Skip blank lines when -s is enabled
-            if (squeeze && atLineStart && ch == '\n')
+        while ((count = read(fd, &ch, 1)) > 0) {
+
+            if (ch != '\n') {
+                if (len >= sizeof(line)) {
+                    printf("Error: Line too long\n");
+                    close(fd);
+                    return 1;
+                }
+                line[len++] = ch;
                 continue;
+            }
 
-            // Number the beginning of each line
-            if (atLineStart && numberLines) {
-                printf("%6d  ", lineNumber++);
+            // Check if line contains only whitespace
+            int blank = 1;
+            for (int j = 0; j < len; j++) {
+                if (line[j] != ' ' && line[j] != '\t' &&
+                    line[j] != '\r' && line[j] != '\v' &&
+                    line[j] != '\f') {
+                    blank = 0;
+                    break;
+                }
+            }
+
+            if (!s || !blank) {
+                if (n)
+                    printf("%6d  ", lineNum++);
+
                 fflush(stdout);
+                write(1, line, len);
+
+                if (e)
+                    write(1, "$", 1);
+
+                write(1, "\n", 1);
             }
 
-            if (ch == '\n') {
+            len = 0;
+        }
 
-                // Add $ at the end of each line
-                if (showEnds)
-                    write(STDOUT_FILENO, "$", 1);
+        // Print final line without newline
+        if (len > 0) {
+            int blank = 1;
 
-                write(STDOUT_FILENO, "\n", 1);
-
-                atLineStart = 1;
-                lineHasContent = 0;
+            for (int j = 0; j < len; j++) {
+                if (line[j] != ' ' && line[j] != '\t' &&
+                    line[j] != '\r' && line[j] != '\v' &&
+                    line[j] != '\f') {
+                    blank = 0;
+                    break;
+                }
             }
-            else {
-                write(STDOUT_FILENO, &ch, 1);
 
-                atLineStart = 0;
-                lineHasContent = 1;
+            if (!s || !blank) {
+                if (n)
+                    printf("%6d  ", lineNum++);
+
+                fflush(stdout);
+                write(1, line, len);
+
+                if (e)
+                    write(1, "$", 1);
             }
+        }
+
+        len = 0;
+
+        if (count < 0) {
+            perror(argv[i]);
+            error = 1;
         }
 
         close(fd);
     }
 
-    if (fileCount == 0) {
-        printf("Error: No input files provided.\n");
+    if (files == 0) {
+        printf("Error: No input files\n");
         return 1;
     }
 
-    return 0;
+    return error;
 }
+
